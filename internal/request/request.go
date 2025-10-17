@@ -8,7 +8,7 @@ import (
 	"strings"
 	"strconv"
 
-	"httpfromtcp/internal/headers"
+	"github.com/JA50N14/httpfromtcp/internal/headers"
 )
 
 type Request struct {
