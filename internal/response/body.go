@@ -5,10 +5,11 @@ import (
 
 )
 
-func (w *Writer) WriteBody(p []byte) (int, error) {
-	if w.WriterState != StateWriteBody {
-		return 0, fmt.Errorf("write headers before writing to body")
+
+func (w *Writer) WriteBody(p []byte) error {
+	if w.writerState != writerStateBody {
+		return fmt.Errorf("writer is in wrong state: %d", w.writerState)
 	}
-	w.Body = p
-	return w.Out.Write(p)
+	_, err := w.writer.Write(p)
+	return err
 }

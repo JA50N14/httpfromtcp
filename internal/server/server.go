@@ -61,18 +61,18 @@ func (s *Server) listen() {
 
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
+	w := response.NewWriter(conn)
 	
-	w := &response.Writer{
-		Out:         conn,
-		WriterState: response.StateWriteStatusLine,
-	}
-
-
 	req, err := request.RequestFromReader(conn)
 	if err != nil {
-		w.StatusCode = response.StatusCodeBadRequest
-		
+		w.WriteStatusLine(response.StatusCodeBadRequest)
+		respBody := []byte(fmt.Sprintf("error parsing request: %v", err))
+		headers := response.GetDefaultHeaders(len(respBody))
+		w.WriteHeaders(headers)
+		w.WriteBody(respBody)
+		return
 	}
+
 	s.handler(w, req)
 	return
 }

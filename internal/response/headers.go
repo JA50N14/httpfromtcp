@@ -2,42 +2,33 @@ package response
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/JA50N14/httpfromtcp/internal/headers"
 )
 
 func (w *Writer) WriteHeaders(h headers.Headers) error {
-	if w.WriterState != StateWriteHeaders {
-		return fmt.Errorf("write to status-line before writing to headers")
+	if w.writerState != writerStateHeaders {
+		return fmt.Errorf("writer is in wrong state: %d", w.writerState)
 	}
-	
-	h = AddDefaultHeaders(h, w.BodyLen)
-	var headersString string
-	for key, value := range h {
-		headersString += fmt.Sprintf("%s: %s\r\n", key, value)
+
+	defer func() { w.writerState = writerStateBody }()
+
+	for k, v := range h {
+		key := strings.ToLower(k)
+		_, err := w.writer.Write([]byte(fmt.Sprintf("%s: %s\r\n", key, v)))
+		if err != nil {
+			return fmt.Errorf("error writing response headers to connection: %v", err)
+		}
 	}
-	headersString += "\r\n"
-	_, err := w.Out.Write([]byte(headersString))
-	if err != nil {
-		return err
-	}
-	w.WriterState = StateWriteBody
-	w.Headers = h
-	return nil	
+	_, err := w.writer.Write([]byte("\r\n"))
+	return err
 }
 
-
-func AddDefaultHeaders(h headers.Headers, contentLen int) headers.Headers {
-	defaultHeaders := headers.NewHeaders()
-	defaultHeaders.Set("Content-Length", fmt.Sprintf("%d", contentLen))
-	defaultHeaders.Set("Connection", "close")
-	defaultHeaders.Set("Content-Type", "text/plain")
-	
-	for key, value := range defaultHeaders {
-		if _, ok := h[key]; ok {
-			continue
-		}
-		h.Set(key, value)
-	}
+func GetDefaultHeaders(contentLen int) headers.Headers {
+	h := headers.NewHeaders()
+	h.Set("Content-Length", fmt.Sprintf("%d", contentLen))
+	h.Set("Connection", "close")
+	h.Set("Content-Type", "text/plain")
 	return h
 }
