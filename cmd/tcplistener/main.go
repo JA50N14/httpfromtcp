@@ -43,37 +43,3 @@ func main() {
 	}
 }
 
-// func getLinesChannel(conn io.ReadCloser) <-chan string {
-// 	lines := make(chan string)
-
-// 	go func() {
-// 		defer conn.Close()
-// 		defer close(lines)
-// 		currentLine := ""
-// 		for {
-// 			buff := make([]byte, 8)
-// 			n, err := conn.Read(buff)
-// 			if err != nil {
-// 				if currentLine != "" {
-// 					lines <- currentLine
-// 					currentLine = ""
-// 				}
-// 				if errors.Is(err, io.EOF) {
-// 					break
-// 				}
-// 				fmt.Printf("error: %s\n", err.Error())
-// 				break
-// 			}
-// 			str := string(buff[:n])
-// 			parts := strings.Split(str, "\n")
-
-// 			for i := 0; i < len(parts)-1; i++ {
-// 				lines <- currentLine + parts[i]
-// 				currentLine = ""
-// 			}
-// 			currentLine += parts[len(parts)-1]
-// 		}
-// 	}()
-
-// 	return lines
-// }

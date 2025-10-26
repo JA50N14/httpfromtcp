@@ -1,11 +1,18 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
+	"github.com/JA50N14/httpfromtcp/internal/headers"
 	"github.com/JA50N14/httpfromtcp/internal/request"
 	"github.com/JA50N14/httpfromtcp/internal/response"
 	"github.com/JA50N14/httpfromtcp/internal/server"
@@ -28,6 +35,15 @@ func main() {
 }
 
 func handler(w *response.Writer, req *request.Request) {
+	if strings.HasPrefix(req.RequestLine.RequestTarget, "/httpbin") {
+		proxyHandler(w, req)
+		return
+	}
+	if strings.HasPrefix(req.RequestLine.RequestTarget, "/video") {
+		videoHandler(w, req)
+		return
+	}
+
 	if req.RequestLine.RequestTarget == "/yourproblem" {
 		handler400(w, req)
 		return
@@ -92,4 +108,75 @@ func handler200(w *response.Writer, _ *request.Request) {
 	w.WriteHeaders(headers)
 	w.WriteBody(body)
 	return
+}
+
+func proxyHandler(w *response.Writer, req *request.Request) {
+	target := strings.TrimPrefix(req.RequestLine.RequestTarget, "/httpbin/")
+	url := "https://httpbin.org/" + target
+	//proxying to url
+	resp, err := http.Get(url)
+	if err != nil {
+		handler500(w, req)
+		return
+	}
+	defer resp.Body.Close()
+
+	w.WriteStatusLine(response.StatusCodeSuccess)
+	h := response.GetDefaultHeaders(0)
+	h.Override("Transfer-Encoding", "chunked")
+	h.Override("Trailer", "X-Content-SHA256, X-Content-Length")
+	h.Remove("Content-Length")
+	w.WriteHeaders(h)
+
+	const maxChunkSize = 1024
+	chunkBody := make([]byte, 0)
+	buf := make([]byte, maxChunkSize)
+	for {
+		n, err := resp.Body.Read(buf)
+		fmt.Println("Read", n, "bytes")
+		if n > 0 {
+			_, err = w.WriteChunkedBody(buf[:n])
+			if err != nil {
+				fmt.Println("Error writing chunked body:", err)
+				break
+			}
+			chunkBody = append(chunkBody, buf[:n]...)
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			fmt.Println("Error reading response body:", err)
+			break
+		}
+	}
+	_, err = w.WriteChunkedBodyDone()
+	if err != nil {
+		fmt.Println("Error writing chunked body done:", err)
+	}
+
+	trailers := headers.NewHeaders()
+	hash := sha256.Sum256(chunkBody)
+	trailers.Override("X-Content-SHA256", hex.EncodeToString(hash[:]))
+
+	trailers.Override("X-Content-Length", fmt.Sprintf("%d", len(chunkBody)))
+	err = w.WriteTrailers(trailers)
+	if err != nil {
+		fmt.Println("Error writing trailers:", err)
+	}
+	fmt.Println("Wrote trailers")
+}
+
+func videoHandler(w *response.Writer, _ *request.Request) {
+	const filePath = "assets/vim.mp4"
+	videoBytes, err := os.ReadFile(filePath)
+	if err != nil {
+		fmt.Println("error reading video file:", err)
+		return
+	}
+	w.WriteStatusLine(response.StatusCodeSuccess)
+	h := response.GetDefaultHeaders(len(videoBytes))
+	h.Override("Content-Type", "video/mp4")
+	w.WriteHeaders(h)
+	w.WriteBody(videoBytes)
 }

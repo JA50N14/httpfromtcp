@@ -1,8 +1,10 @@
 package response
 
 import (
+	"fmt"
 	"io"
 
+	"github.com/JA50N14/httpfromtcp/internal/headers"
 )
 
 type writerState int
@@ -11,25 +13,109 @@ const (
 	writerStateStatusLine writerState = iota
 	writerStateHeaders
 	writerStateBody
+	writerStateTrailers
 )
 
 type Writer struct {
 	writerState writerState
-	writer io.Writer
+	writer      io.Writer
 }
 
-type StatusCode int
-const (
-	StatusCodeSuccess StatusCode = 200
-	StatusCodeBadRequest StatusCode = 400
-	StatusCodeInternalServerError StatusCode = 500
-)
-
-
 func NewWriter(w io.Writer) *Writer {
-	return &Writer {
+	return &Writer{
 		writerState: writerStateStatusLine,
-		writer: w,
+		writer:      w,
 	}
+}
+
+func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
+	if w.writerState != writerStateStatusLine {
+		return fmt.Errorf("writer is in wrong state: %d", w.writerState)
+	}
+	defer func() { w.writerState = writerStateHeaders }()
+
+	data := getStatusLine(statusCode)
+	_, err := w.writer.Write(data)
+	return err
+}
+
+func (w *Writer) WriteHeaders(h headers.Headers) error {
+	if w.writerState != writerStateHeaders {
+		return fmt.Errorf("writer is in wrong state: %d", w.writerState)
+	}
+	defer func() { w.writerState = writerStateBody }()
+
+	for k, v := range h {
+		_, err := w.writer.Write([]byte(fmt.Sprintf("%s: %s\r\n", k, v)))
+		if err != nil {
+			return fmt.Errorf("error writing response headers to connection: %v", err)
+		}
+	}
+	_, err := w.writer.Write([]byte("\r\n"))
+	return err
+}
+
+func (w *Writer) WriteBody(p []byte) error {
+	if w.writerState != writerStateBody {
+		return fmt.Errorf("writer is in wrong state: %d", w.writerState)
+	}
+	_, err := w.writer.Write(p)
+	return err
+}
+
+func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+	if w.writerState != writerStateBody {
+		return 0, fmt.Errorf("writer is in wrong state: %d", w.writerState)
+	}
+	chunkSize := len(p)
+
+	nTotal := 0
+	n, err := fmt.Fprintf(w.writer, "%x\r\n", chunkSize)
+	if err != nil {
+		return nTotal, err
+	}
+	nTotal += n
+
+	n, err = w.writer.Write(p)
+	if err != nil {
+		return nTotal, err
+	}
+	nTotal += n
+
+	n, err = w.writer.Write([]byte("\r\n"))
+	if err != nil {
+		return nTotal, err
+	}
+	nTotal += n
+	return nTotal, nil
+}
+
+func (w *Writer) WriteChunkedBodyDone() (int, error) {
+	if w.writerState != writerStateBody {
+		return 0, fmt.Errorf("writer is in wrong state: %d", w.writerState)
+	}
+	n, err := w.writer.Write([]byte("0\r\n"))
+	if err != nil {
+		fmt.Println("error writing chunked body done")
+		return n, err
+	}
+	w.writerState = writerStateTrailers
+	return n, nil
+}
+
+func (w *Writer) WriteTrailers(h headers.Headers) error {
+	if w.writerState != writerStateTrailers {
+		return fmt.Errorf("writer is in wrong state: %d", w.writerState)
+	}
+	defer func() { w.writerState = writerStateBody }()
+
+	for key, value := range h {
+		_, err := w.writer.Write([]byte(fmt.Sprintf("%s: %s\r\n", key, value)))
+		if err != nil {
+			return err
+		}
+	}
+	_, err := w.writer.Write([]byte("\r\n"))
+	return err
 }
 

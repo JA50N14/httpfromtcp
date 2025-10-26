@@ -54,9 +54,11 @@ func (h Headers) Set(key, value string) {
 	}
 }
 
+
 func (h Headers) Override(key, value string) {
 	h[key] = value
 }
+
 
 var tokenChars = []byte{'!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~'}
 
@@ -80,7 +82,11 @@ func isTokenChar(c byte) bool {
 }
 
 func (h Headers) Get(key string) (string, bool) {
-	key = strings.ToLower(key)
 	v, ok := h[key]
 	return v, ok
+}
+
+func (h Headers) Remove(key string) {
+	delete(h, key)
+
 }
